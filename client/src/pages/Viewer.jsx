@@ -24,7 +24,9 @@ const Viewer = () => {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' }
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
     ]
   };
 
@@ -48,6 +50,8 @@ const Viewer = () => {
       setLoading(true);
       setError(null);
       if (hostEmail) setHostEmail(hostEmail);
+      // Signal to host that we are ready to receive offer
+      socket.emit('viewer-ready', { roomCode });
     });
 
     socket.on('request-rejected', () => {
@@ -62,7 +66,7 @@ const Viewer = () => {
     });
 
     socket.on('offer', async ({ from, offer }) => {
-      console.log("Offer received from:", from);
+      console.log("Offer received from host");
       if (pc.current) pc.current.close();
       
       pc.current = new RTCPeerConnection(iceServers);
@@ -74,7 +78,7 @@ const Viewer = () => {
       };
 
       pc.current.ontrack = (e) => {
-        console.log("Remote track received:", e.streams[0]);
+        console.log("Remote track detected");
         if (e.streams && e.streams[0]) {
           setStream(e.streams[0]);
           setLoading(false);
@@ -82,10 +86,8 @@ const Viewer = () => {
       };
 
       pc.current.oniceconnectionstatechange = () => {
-        console.log("ICE Connection State:", pc.current.iceConnectionState);
-        if (pc.current.iceConnectionState === 'failed') {
-          setError('Connection failed. Retrying...');
-          setLoading(true);
+        if (pc.current.iceConnectionState === 'disconnected') {
+           setLoading(true);
         }
       };
 
@@ -95,8 +97,7 @@ const Viewer = () => {
         await pc.current.setLocalDescription(answer);
         socket.emit('answer', { to: from, answer });
       } catch (err) { 
-        console.error("WebRTC Error:", err);
-        setError("Sync error. Please wait...");
+        console.error("WebRTC Handshake Error:", err);
       }
     });
 
@@ -104,13 +105,8 @@ const Viewer = () => {
       if (pc.current) {
         try {
           await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) { console.error("ICE Candidate Error:", err); }
+        } catch (err) { console.error("ICE Error:", err); }
       }
-    });
-
-    socket.on('error', (data) => {
-      setError(data.message);
-      setLoading(false);
     });
 
     return () => {
@@ -119,7 +115,6 @@ const Viewer = () => {
       socket.off('kicked');
       socket.off('offer');
       socket.off('ice-candidate');
-      socket.off('error');
       if (pc.current) pc.current.close();
     };
   }, [socket, roomCode, location.search]);
@@ -127,13 +122,10 @@ const Viewer = () => {
   useEffect(() => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.log("Autoplay blocked, user interaction required");
-          setIsMuted(true); // Ensure muted to allow autoplay
-        });
-      }
+      videoRef.current.play().catch(e => {
+        console.log("Play failed, retrying muted");
+        setIsMuted(true);
+      });
     }
   }, [stream]);
 
@@ -183,12 +175,12 @@ const Viewer = () => {
           </div>
 
           <div ref={containerRef} className="flex-grow bg-[#0f172a] relative flex items-center justify-center overflow-hidden">
-            {loading ? (
+            {loading && !error ? (
               <div className="flex flex-col items-center gap-6 text-center p-8">
                 <Loader2 className="w-10 h-10 text-blue-900 animate-spin" />
                 <div>
                   <p className="text-white font-black uppercase tracking-[0.2em] text-[11px] mb-2 leading-none">Tunneling Data...</p>
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest italic mt-2">Connecting to Secure Node</p>
+                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest italic mt-2">Establishing Secure P2P Link</p>
                 </div>
               </div>
             ) : error ? (
@@ -200,21 +192,13 @@ const Viewer = () => {
                 <button onClick={() => navigate('/')} className="px-8 py-3 bg-blue-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-950">Back Home</button>
               </div>
             ) : (
-              <div className="w-full h-full flex items-center justify-center relative">
-                 <video 
-                   ref={videoRef} 
-                   autoPlay 
-                   muted={isMuted} 
-                   playsInline 
-                   className="w-full h-full object-contain"
-                   onLoadedMetadata={() => videoRef.current.play().catch(e => console.log("Play error", e))}
-                 />
-                 {isMuted && !error && (
-                   <div className="absolute bottom-6 right-6 px-4 py-2 bg-blue-900/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
-                     <VolumeX size={14} /> Muted for Autoplay
-                   </div>
-                 )}
-              </div>
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                muted={isMuted} 
+                playsInline 
+                className="w-full h-full object-contain" 
+              />
             )}
           </div>
           
