@@ -21,11 +21,8 @@ const Host = () => {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
-    ],
-    iceCandidatePoolSize: 10
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ]
   };
 
   useEffect(() => {
@@ -59,6 +56,7 @@ const Host = () => {
     });
 
     socket.on('viewer-ready', ({ from }) => {
+      console.log("Viewer ready signal received:", from);
       if (isSharing && stream) {
         createOffer(from);
       }
@@ -111,25 +109,13 @@ const Host = () => {
       const pc = new RTCPeerConnection(iceServers);
       peerConnections.current[viewerId] = pc;
       
-      // Optimize video quality for mobile data
-      stream.getTracks().forEach(track => {
-        const sender = pc.addTrack(track, stream);
-        if (track.kind === 'video') {
-          const params = sender.getParameters();
-          if (!params.encodings) params.encodings = [{}];
-          params.encodings[0].maxBitrate = 800000; // 800kbps (Good for 4G)
-          sender.setParameters(params);
-        }
-      });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
       
       pc.onicecandidate = (e) => {
         if (e.candidate) socket.emit('ice-candidate', { to: viewerId, candidate: e.candidate });
       };
 
-      const offer = await pc.createOffer({
-        offerToReceiveVideo: true,
-        offerToReceiveAudio: true
-      });
+      const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit('offer', { to: viewerId, offer });
     } catch (err) { console.error("Offer Error:", err); }
@@ -137,14 +123,7 @@ const Host = () => {
 
   const startSharing = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ 
-        video: { 
-          width: { max: 1280 },
-          height: { max: 720 },
-          frameRate: { max: 15 } // Lower framerate for stability on mobile
-        }, 
-        audio: true 
-      });
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       setStream(mediaStream);
       setIsSharing(true);
 
@@ -221,7 +200,7 @@ const Host = () => {
             <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-white z-10">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 ${isSharing ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
-                <h2 className="font-black text-slate-500 uppercase tracking-widest text-[10px]">{isSharing ? 'Live Broadcast Channel (Optimized)' : 'Standby Mode'}</h2>
+                <h2 className="font-black text-slate-500 uppercase tracking-widest text-[10px]">{isSharing ? 'Live Broadcast Channel' : 'Standby Mode'}</h2>
               </div>
               <button className="text-slate-300 hover:text-blue-900 transition-colors"><Maximize2 size={16} /></button>
             </div>
