@@ -21,7 +21,9 @@ const Host = () => {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' }
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
     ]
   };
 
@@ -53,9 +55,12 @@ const Host = () => {
         if (prev.find(v => v.id === id)) return prev;
         return [...prev, { id, email }];
       });
-      // If we are already sharing, send offer immediately to new viewer
+    });
+
+    socket.on('viewer-ready', ({ from }) => {
+      console.log("Viewer ready to receive stream:", from);
       if (isSharing && stream) {
-        setTimeout(() => createOffer(id), 1000);
+        createOffer(from);
       }
     });
 
@@ -89,6 +94,7 @@ const Host = () => {
       socket.off('connect', initRoom);
       socket.off('new-join-request');
       socket.off('viewer-joined');
+      socket.off('viewer-ready');
       socket.off('viewer-left');
       socket.off('answer');
       socket.off('ice-candidate');
@@ -111,10 +117,7 @@ const Host = () => {
         if (e.candidate) socket.emit('ice-candidate', { to: viewerId, candidate: e.candidate });
       };
 
-      const offer = await pc.createOffer({
-        offerToReceiveVideo: true,
-        offerToReceiveAudio: true
-      });
+      const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit('offer', { to: viewerId, offer });
     } catch (err) { console.error("Offer Error:", err); }
@@ -122,14 +125,11 @@ const Host = () => {
 
   const startSharing = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ 
-        video: { cursor: "always" },
-        audio: true 
-      });
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       setStream(mediaStream);
       setIsSharing(true);
 
-      // Notify all current viewers
+      // Re-initiate offers for all viewers who are already "joined"
       viewers.forEach(v => createOffer(v.id));
 
       mediaStream.getVideoTracks()[0].onended = stopSharing;
@@ -171,7 +171,7 @@ const Host = () => {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans">
-      <header className="bg-white border-b border-slate-200 h-14 fixed top-0 w-full z-50 px-6 flex items-center justify-between">
+      <header className="bg-white border-b border-slate-200 h-14 fixed top-0 w-full z-40 px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 bg-blue-900 flex items-center justify-center text-white font-black text-sm">N</div>
           <div className="flex flex-col">
