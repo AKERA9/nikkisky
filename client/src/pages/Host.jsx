@@ -112,8 +112,8 @@ const Host = () => {
     };
   }, [socket, roomCode, hostEmail, isSharing, stream]);
 
-  const createOffer = async (viewerId) => {
-    if (!stream) return;
+  const createOffer = async (viewerId, activeStream = stream) => {
+    if (!activeStream) return;
     try {
       if (peerConnections.current[viewerId]) {
         peerConnections.current[viewerId].close();
@@ -122,7 +122,7 @@ const Host = () => {
       const pc = new RTCPeerConnection(iceServers);
       peerConnections.current[viewerId] = pc;
       
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      activeStream.getTracks().forEach(track => pc.addTrack(track, activeStream));
       
       pc.onicecandidate = (e) => {
         if (e.candidate) socket.emit('ice-candidate', { to: viewerId, candidate: e.candidate });
@@ -140,7 +140,7 @@ const Host = () => {
       
       const videoTrack = mediaStream.getVideoTracks()[0];
       if (videoTrack && 'contentHint' in videoTrack) {
-        videoTrack.contentHint = 'detail'; // Forces WebRTC to prioritize sharp text over framerate
+        videoTrack.contentHint = 'detail';
       }
 
       setStream(mediaStream);
@@ -150,7 +150,7 @@ const Host = () => {
         videoRef.current.srcObject = mediaStream;
       }
 
-      viewers.forEach(v => createOffer(v.id));
+      viewers.forEach(v => createOffer(v.id, mediaStream));
 
       mediaStream.getVideoTracks()[0].onended = stopSharing;
     } catch (err) { console.error(err); }
