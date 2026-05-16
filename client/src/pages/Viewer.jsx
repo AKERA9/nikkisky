@@ -21,7 +21,11 @@ const Viewer = () => {
   const requestSent = useRef(false);
 
   const iceServers = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ]
   };
 
   useEffect(() => {
@@ -58,28 +62,49 @@ const Viewer = () => {
     });
 
     socket.on('offer', async ({ from, offer }) => {
+      console.log("Offer received from:", from);
       if (pc.current) pc.current.close();
+      
       pc.current = new RTCPeerConnection(iceServers);
+      
       pc.current.onicecandidate = (e) => {
-        if (e.candidate) socket.emit('ice-candidate', { to: from, candidate: e.candidate });
+        if (e.candidate) {
+          socket.emit('ice-candidate', { to: from, candidate: e.candidate });
+        }
       };
+
       pc.current.ontrack = (e) => {
-        setStream(e.streams[0]);
-        setLoading(false);
+        console.log("Remote track received:", e.streams[0]);
+        if (e.streams && e.streams[0]) {
+          setStream(e.streams[0]);
+          setLoading(false);
+        }
       };
+
+      pc.current.oniceconnectionstatechange = () => {
+        console.log("ICE Connection State:", pc.current.iceConnectionState);
+        if (pc.current.iceConnectionState === 'failed') {
+          setError('Connection failed. Retrying...');
+          setLoading(true);
+        }
+      };
+
       try {
         await pc.current.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.current.createAnswer();
         await pc.current.setLocalDescription(answer);
         socket.emit('answer', { to: from, answer });
-      } catch (err) { console.error(err); }
+      } catch (err) { 
+        console.error("WebRTC Error:", err);
+        setError("Sync error. Please wait...");
+      }
     });
 
     socket.on('ice-candidate', async ({ from, candidate }) => {
       if (pc.current) {
         try {
           await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) { console.error(err); }
+        } catch (err) { console.error("ICE Candidate Error:", err); }
       }
     });
 
@@ -102,7 +127,13 @@ const Viewer = () => {
   useEffect(() => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(e => console.log("Autoplay block", e));
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.log("Autoplay blocked, user interaction required");
+          setIsMuted(true); // Ensure muted to allow autoplay
+        });
+      }
     }
   }, [stream]);
 
@@ -169,7 +200,21 @@ const Viewer = () => {
                 <button onClick={() => navigate('/')} className="px-8 py-3 bg-blue-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-950">Back Home</button>
               </div>
             ) : (
-              <video ref={videoRef} autoPlay muted={isMuted} playsInline className="w-full h-full object-contain" />
+              <div className="w-full h-full flex items-center justify-center relative">
+                 <video 
+                   ref={videoRef} 
+                   autoPlay 
+                   muted={isMuted} 
+                   playsInline 
+                   className="w-full h-full object-contain"
+                   onLoadedMetadata={() => videoRef.current.play().catch(e => console.log("Play error", e))}
+                 />
+                 {isMuted && !error && (
+                   <div className="absolute bottom-6 right-6 px-4 py-2 bg-blue-900/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
+                     <VolumeX size={14} /> Muted for Autoplay
+                   </div>
+                 )}
+              </div>
             )}
           </div>
           
