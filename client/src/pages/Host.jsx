@@ -18,7 +18,11 @@ const Host = () => {
   const peerConnections = useRef({});
 
   const iceServers = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ]
   };
 
   useEffect(() => {
@@ -49,6 +53,10 @@ const Host = () => {
         if (prev.find(v => v.id === id)) return prev;
         return [...prev, { id, email }];
       });
+      // If we are already sharing, send offer immediately to new viewer
+      if (isSharing && stream) {
+        setTimeout(() => createOffer(id), 1000);
+      }
     });
 
     socket.on('viewer-left', ({ viewerId }) => {
@@ -61,10 +69,10 @@ const Host = () => {
 
     socket.on('answer', async ({ from, answer }) => {
       const pc = peerConnections.current[from];
-      if (pc) {
+      if (pc && pc.signalingState !== 'stable') {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        } catch (err) { console.error(err); }
+        } catch (err) { console.error("Answer Error:", err); }
       }
     });
 
@@ -73,7 +81,7 @@ const Host = () => {
       if (pc) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) { console.error(err); }
+        } catch (err) { console.error("ICE Error:", err); }
       }
     });
 
@@ -85,57 +93,45 @@ const Host = () => {
       socket.off('answer');
       socket.off('ice-candidate');
     };
-  }, [socket, roomCode, hostEmail]);
-
-  useEffect(() => {
-    if (isSharing && stream) {
-      viewers.forEach(v => {
-        if (!peerConnections.current[v.id]) createOffer(v.id);
-      });
-    }
-  }, [isSharing, stream, viewers]);
-
-  useEffect(() => {
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream, isSharing]);
+  }, [socket, roomCode, hostEmail, isSharing, stream]);
 
   const createOffer = async (viewerId) => {
     if (!stream) return;
     try {
+      if (peerConnections.current[viewerId]) {
+        peerConnections.current[viewerId].close();
+      }
+
       const pc = new RTCPeerConnection(iceServers);
       peerConnections.current[viewerId] = pc;
+      
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      
       pc.onicecandidate = (e) => {
         if (e.candidate) socket.emit('ice-candidate', { to: viewerId, candidate: e.candidate });
       };
-      const offer = await pc.createOffer();
+
+      const offer = await pc.createOffer({
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true
+      });
       await pc.setLocalDescription(offer);
       socket.emit('offer', { to: viewerId, offer });
-    } catch (err) { console.error(err); }
-  };
-
-  const handleKick = (id) => {
-    socket.emit('kick-viewer', { roomCode, viewerId: id });
-    setViewers(prev => prev.filter(v => v.id !== id));
-  };
-
-  const handleAcceptRequest = (req) => {
-    socket.emit('accept-viewer', { roomCode, viewerId: req.id, email: req.email });
-    setPendingRequests(prev => prev.filter(r => r.id !== req.id));
-  };
-
-  const handleRejectRequest = (id) => {
-    socket.emit('reject-viewer', { viewerId: id });
-    setPendingRequests(prev => prev.filter(r => r.id !== id));
+    } catch (err) { console.error("Offer Error:", err); }
   };
 
   const startSharing = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: { cursor: "always" },
+        audio: true 
+      });
       setStream(mediaStream);
       setIsSharing(true);
+
+      // Notify all current viewers
+      viewers.forEach(v => createOffer(v.id));
+
       mediaStream.getVideoTracks()[0].onended = stopSharing;
     } catch (err) { console.error(err); }
   };
@@ -156,6 +152,21 @@ const Host = () => {
     navigator.clipboard.writeText(roomCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleAcceptRequest = (req) => {
+    socket.emit('accept-viewer', { roomCode, viewerId: req.id, email: req.email });
+    setPendingRequests(prev => prev.filter(r => r.id !== req.id));
+  };
+
+  const handleRejectRequest = (id) => {
+    socket.emit('reject-viewer', { viewerId: id });
+    setPendingRequests(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleKick = (id) => {
+    socket.emit('kick-viewer', { roomCode, viewerId: id });
+    setViewers(prev => prev.filter(v => v.id !== id));
   };
 
   return (
@@ -195,7 +206,7 @@ const Host = () => {
             
             <div className="flex-grow bg-[#0f172a] relative overflow-hidden flex items-center justify-center">
               {isSharing ? (
-                <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-contain" />
+                <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-contain shadow-2xl" />
               ) : (
                 <div className="text-center p-8">
                   <Monitor size={48} className="text-slate-700 mx-auto mb-6" />
