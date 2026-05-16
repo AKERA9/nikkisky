@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
-import { Monitor, Loader2, Maximize2, Minimize2, Volume2, VolumeX, Shield, Users, RefreshCw, Zap, Globe, Lock } from 'lucide-react';
+import { Monitor, Loader2, Maximize2, Minimize2, Volume2, VolumeX, Shield, Users, RefreshCw, Zap, Globe, Lock, Play } from 'lucide-react';
 
 const Viewer = () => {
   const { roomCode } = useParams();
@@ -198,13 +198,30 @@ const Viewer = () => {
                 <button onClick={() => navigate('/')} className="px-8 py-3 bg-blue-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-950">Back Home</button>
               </div>
             ) : (
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                muted={isMuted} 
-                playsInline 
-                className="w-full h-full object-contain" 
-              />
+              <div className="w-full h-full relative group">
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  muted={isMuted} 
+                  playsInline 
+                  className="w-full h-full object-contain"
+                  onLoadedMetadata={() => {
+                    videoRef.current?.play().catch(e => console.log("Autoplay blocked:", e));
+                  }}
+                />
+                {/* Manual Play Overlay for Mobile */}
+                <button 
+                  onClick={() => {
+                    videoRef.current?.play();
+                    setIsMuted(false);
+                  }} 
+                  className="absolute inset-0 w-full h-full z-10 bg-transparent flex items-center justify-center"
+                >
+                  <div className="bg-blue-900/80 text-white p-5 rounded-full opacity-0 md:group-hover:opacity-100 flex md:hidden items-center justify-center transition-opacity shadow-xl border border-white/20">
+                    <Play size={40} className="ml-1" />
+                  </div>
+                </button>
+              </div>
             )}
           </div>
           
