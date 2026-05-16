@@ -137,6 +137,12 @@ const Host = () => {
   const startSharing = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      if (videoTrack && 'contentHint' in videoTrack) {
+        videoTrack.contentHint = 'detail'; // Forces WebRTC to prioritize sharp text over framerate
+      }
+
       setStream(mediaStream);
       setIsSharing(true);
 
