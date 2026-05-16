@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
-import { Monitor, StopCircle, Copy, Check, Users, Shield, Maximize2, X, Globe, Play } from 'lucide-react';
+import { Monitor, StopCircle, Copy, Check, Users, Shield, Maximize2, X, Globe, Play, Zap } from 'lucide-react';
 
 const Host = () => {
   const { roomCode } = useParams();
@@ -24,7 +24,8 @@ const Host = () => {
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
       { urls: 'stun:stun4.l.google.com:19302' }
-    ]
+    ],
+    iceCandidatePoolSize: 10
   };
 
   useEffect(() => {
@@ -58,7 +59,6 @@ const Host = () => {
     });
 
     socket.on('viewer-ready', ({ from }) => {
-      console.log("Viewer ready to receive stream:", from);
       if (isSharing && stream) {
         createOffer(from);
       }
@@ -111,13 +111,25 @@ const Host = () => {
       const pc = new RTCPeerConnection(iceServers);
       peerConnections.current[viewerId] = pc;
       
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      // Optimize video quality for mobile data
+      stream.getTracks().forEach(track => {
+        const sender = pc.addTrack(track, stream);
+        if (track.kind === 'video') {
+          const params = sender.getParameters();
+          if (!params.encodings) params.encodings = [{}];
+          params.encodings[0].maxBitrate = 800000; // 800kbps (Good for 4G)
+          sender.setParameters(params);
+        }
+      });
       
       pc.onicecandidate = (e) => {
         if (e.candidate) socket.emit('ice-candidate', { to: viewerId, candidate: e.candidate });
       };
 
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer({
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true
+      });
       await pc.setLocalDescription(offer);
       socket.emit('offer', { to: viewerId, offer });
     } catch (err) { console.error("Offer Error:", err); }
@@ -125,11 +137,21 @@ const Host = () => {
 
   const startSharing = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: { 
+          width: { max: 1280 },
+          height: { max: 720 },
+          frameRate: { max: 15 } // Lower framerate for stability on mobile
+        }, 
+        audio: true 
+      });
       setStream(mediaStream);
       setIsSharing(true);
 
-      // Re-initiate offers for all viewers who are already "joined"
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+
       viewers.forEach(v => createOffer(v.id));
 
       mediaStream.getVideoTracks()[0].onended = stopSharing;
@@ -199,7 +221,7 @@ const Host = () => {
             <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-white z-10">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 ${isSharing ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
-                <h2 className="font-black text-slate-500 uppercase tracking-widest text-[10px]">{isSharing ? 'Live Broadcast Channel' : 'Standby Mode'}</h2>
+                <h2 className="font-black text-slate-500 uppercase tracking-widest text-[10px]">{isSharing ? 'Live Broadcast Channel (Optimized)' : 'Standby Mode'}</h2>
               </div>
               <button className="text-slate-300 hover:text-blue-900 transition-colors"><Maximize2 size={16} /></button>
             </div>
@@ -222,7 +244,7 @@ const Host = () => {
           <div className="grid grid-cols-3 gap-6">
             {[
               { label: 'Viewers', value: viewers.length, icon: <Users size={18} /> },
-              { label: 'Security', value: 'Encrypted', icon: <Shield size={18} /> },
+              { label: 'Latency', value: 'Ultra-Low', icon: <Zap size={18} /> },
               { label: 'Protocol', value: 'P2P Link', icon: <Globe size={18} /> }
             ].map((s, i) => (
               <div key={i} className="bg-white p-5 border border-slate-200 flex items-center gap-4">
