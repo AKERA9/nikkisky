@@ -122,7 +122,18 @@ const Host = () => {
       const pc = new RTCPeerConnection(iceServers);
       peerConnections.current[viewerId] = pc;
       
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      stream.getTracks().forEach(track => {
+        const sender = pc.addTrack(track, stream);
+        if (track.kind === 'video') {
+          try {
+            const params = sender.getParameters();
+            if (!params.encodings) params.encodings = [{}];
+            params.encodings[0].scaleResolutionDownBy = 2;
+            params.encodings[0].maxBitrate = 1500000; // 1.5 Mbps for stability
+            sender.setParameters(params);
+          } catch (err) { console.error("Encoding params error:", err); }
+        }
+      });
       
       pc.onicecandidate = (e) => {
         if (e.candidate) socket.emit('ice-candidate', { to: viewerId, candidate: e.candidate });
