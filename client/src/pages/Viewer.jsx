@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
-import { Monitor, Loader2, Maximize2, Minimize2, Volume2, VolumeX, Shield, Users, ArrowLeft, Zap, Globe, Lock } from 'lucide-react';
+import { Monitor, Loader2, Maximize2, Minimize2, Volume2, VolumeX, Shield, Users, RefreshCw, Zap, Globe, Lock } from 'lucide-react';
 
 const Viewer = () => {
   const { roomCode } = useParams();
@@ -27,7 +27,15 @@ const Viewer = () => {
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
       { urls: 'stun:stun4.l.google.com:19302' }
-    ]
+    ],
+    iceCandidatePoolSize: 10,
+    bundlePolicy: 'max-bundle'
+  };
+
+  const initWebRTC = () => {
+    if (!socket || !roomCode) return;
+    socket.emit('viewer-ready', { roomCode });
+    setLoading(true);
   };
 
   useEffect(() => {
@@ -50,8 +58,7 @@ const Viewer = () => {
       setLoading(true);
       setError(null);
       if (hostEmail) setHostEmail(hostEmail);
-      // Signal to host that we are ready to receive offer
-      socket.emit('viewer-ready', { roomCode });
+      initWebRTC();
     });
 
     socket.on('request-rejected', () => {
@@ -86,8 +93,9 @@ const Viewer = () => {
       };
 
       pc.current.oniceconnectionstatechange = () => {
-        if (pc.current.iceConnectionState === 'disconnected') {
-           setLoading(true);
+        if (pc.current.iceConnectionState === 'failed' || pc.current.iceConnectionState === 'disconnected') {
+           console.log("Connection failed, retrying...");
+           initWebRTC();
         }
       };
 
@@ -123,7 +131,6 @@ const Viewer = () => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
       videoRef.current.play().catch(e => {
-        console.log("Play failed, retrying muted");
         setIsMuted(true);
       });
     }
@@ -153,6 +160,9 @@ const Viewer = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <button onClick={initWebRTC} className="p-2 text-slate-400 hover:text-blue-900 transition-colors">
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          </button>
           <button onClick={() => navigate('/')} className="px-5 py-1.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest hover:bg-blue-900 transition-all">Exit Node</button>
         </div>
       </header>
@@ -180,7 +190,7 @@ const Viewer = () => {
                 <Loader2 className="w-10 h-10 text-blue-900 animate-spin" />
                 <div>
                   <p className="text-white font-black uppercase tracking-[0.2em] text-[11px] mb-2 leading-none">Tunneling Data...</p>
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest italic mt-2">Establishing Secure P2P Link</p>
+                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest italic mt-2">Optimizing for Mobile Network</p>
                 </div>
               </div>
             ) : error ? (
@@ -209,7 +219,7 @@ const Viewer = () => {
              </div>
              <div className="flex items-center gap-2 text-slate-400">
                 <Globe size={14} className="text-blue-900" />
-                <span className="text-[9px] font-black uppercase tracking-widest leading-none">Global Node</span>
+                <span className="text-[9px] font-black uppercase tracking-widest leading-none">Mobile Optimized</span>
              </div>
           </div>
         </div>
