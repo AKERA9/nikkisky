@@ -82,6 +82,13 @@ io.on('connection', (socket) => {
     io.to(to).emit('answer', { from: socket.id, answer });
   });
 
+  socket.on('viewer-ready', ({ roomCode }) => {
+    const room = rooms.get(roomCode);
+    if (room) {
+      io.to(room.host).emit('viewer-ready', { from: socket.id });
+    }
+  });
+
   socket.on('ice-candidate', ({ to, candidate }) => {
     io.to(to).emit('ice-candidate', { from: socket.id, candidate });
   });
